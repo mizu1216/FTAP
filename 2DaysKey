@@ -101,4 +101,4 @@ else
 	end
 end
 
-loadstring(game:HttpGet("https://raw.githubusercontent.com/mizu1216/FTAP/refs/heads/main/Loader"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/BlizTBr/scripts/refs/heads/main/FTAP.lua"))()
