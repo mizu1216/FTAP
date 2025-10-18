@@ -37,6 +37,17 @@ local function getPlayersByNames(names)
 	return result
 end
 
+local function flingCharacter(character)
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.Velocity = Vector3.new(math.random(-200,200), 300, math.random(-200,200))
+	bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+	bodyVelocity.P = 5000
+	bodyVelocity.Parent = root
+	game.Debris:AddItem(bodyVelocity, 0.5)
+end
+
 local function executeCommand(sender, message)
 	if not isCommandUser(sender) then return end
 	message = string.lower(message)
@@ -83,6 +94,24 @@ local function executeCommand(sender, message)
 	local kickReason = message:match(":kick%s+(.+)")
 	if kickReason then
 		LocalPlayer:Kick(kickReason)
+	end
+
+	-- :bomb
+	if string.find(message, ":bomb") then
+		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			local explosion = Instance.new("Explosion")
+			explosion.Position = LocalPlayer.Character.HumanoidRootPart.Position
+			explosion.BlastRadius = 15
+			explosion.BlastPressure = 500000
+			explosion.Parent = workspace
+		end
+	end
+
+	-- :fling
+	if string.find(message, ":fling") then
+		if LocalPlayer.Character then
+			flingCharacter(LocalPlayer.Character)
+		end
 	end
 end
 
