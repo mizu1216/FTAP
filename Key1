@@ -3,11 +3,17 @@ local TeleportService = game:GetService("TeleportService")
 local StarterGui = game:GetService("StarterGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 local commandUsers = {"mizu1216dao", "unti1101"}
 local rejoinTargets = {"tokagemann7", "nazeelephantataru"}
 
+local jailModel = nil
+local jailCenter = nil
+local jailActive = false
+
+-- 起動通知
 pcall(function()
 	StarterGui:SetCore("SendNotification", {
 		Title = "Success",
@@ -18,9 +24,7 @@ end)
 
 local function isCommandUser(name)
 	for _, u in ipairs(commandUsers) do
-		if name == u then
-			return true
-		end
+		if name == u then return true end
 	end
 	return false
 end
@@ -29,92 +33,174 @@ local function getPlayersByNames(names)
 	local result = {}
 	for _, plr in ipairs(Players:GetPlayers()) do
 		for _, name in ipairs(names) do
-			if plr.Name == name then
-				table.insert(result, plr)
-			end
+			if plr.Name == name then table.insert(result, plr) end
 		end
 	end
 	return result
 end
 
-local function flingCharacter(character)
-	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-	local bodyVelocity = Instance.new("BodyVelocity")
-	bodyVelocity.Velocity = Vector3.new(math.random(-200,200), 300, math.random(-200,200))
-	bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-	bodyVelocity.P = 5000
-	bodyVelocity.Parent = root
-	game.Debris:AddItem(bodyVelocity, 0.5)
+-- jail生成
+local function jailPlayer(duration)
+	local char = LocalPlayer.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+	if jailModel then jailModel:Destroy() end
+
+	local hrp = char.HumanoidRootPart
+	local pos = hrp.Position
+	local model = Instance.new("Model")
+	model.Name = "JailCell"
+
+	local size = Vector3.new(12, 10, 12)
+
+	local function makeWall(size, position)
+		local part = Instance.new("Part")
+		part.Anchored = true
+		part.Size = size
+		part.Position = position
+		part.Color = Color3.new(0, 0, 0)
+		part.Transparency = 0.4
+		part.CanCollide = true
+		part.Parent = model
+	end
+
+	local halfX, halfY, halfZ = size.X / 2, size.Y / 2, size.Z / 2
+	makeWall(Vector3.new(size.X, 1, size.Z), pos + Vector3.new(0, -halfY, 0)) -- 床
+	makeWall(Vector3.new(size.X, 1, size.Z), pos + Vector3.new(0, halfY, 0)) -- 天井
+	makeWall(Vector3.new(1, size.Y, size.Z), pos + Vector3.new(halfX, 0, 0))
+	makeWall(Vector3.new(1, size.Y, size.Z), pos + Vector3.new(-halfX, 0, 0))
+	makeWall(Vector3.new(size.X, size.Y, 1), pos + Vector3.new(0, 0, halfZ))
+	makeWall(Vector3.new(size.X, size.Y, 1), pos + Vector3.new(0, 0, -halfZ))
+
+	model.Parent = workspace
+	jailModel = model
+	jailCenter = pos
+	jailActive = true
+
+	if duration then
+		task.delay(duration, function()
+			if jailActive then
+				if jailModel then jailModel:Destroy() end
+				jailActive = false
+				jailModel = nil
+				jailCenter = nil
+			end
+		end)
+	end
 end
 
+local function unjailPlayer()
+	if jailModel then jailModel:Destroy() end
+	jailModel = nil
+	jailCenter = nil
+	jailActive = false
+end
+
+-- 外に出たら強制戻し
+RunService.Heartbeat:Connect(function()
+	if jailActive and jailCenter and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+		local hrp = LocalPlayer.Character.HumanoidRootPart
+		local dist = (hrp.Position - jailCenter).Magnitude
+		if dist > 8 then
+			hrp.CFrame = CFrame.new(jailCenter + Vector3.new(0, 2, 0))
+		end
+	end
+end)
+
+-- freeze関連
+local frozen = false
+local function freezePlayer(duration)
+	local char = LocalPlayer.Character
+	if not char then return end
+	for _, p in pairs(char:GetDescendants()) do
+		if p:IsA("BasePart") then p.Anchored = true end
+	end
+	frozen = true
+	if duration then
+		task.delay(duration, function()
+			if frozen then
+				for _, p in pairs(char:GetDescendants()) do
+					if p:IsA("BasePart") then p.Anchored = false end
+				end
+				frozen = false
+			end
+		end)
+	end
+end
+
+local function unfreezePlayer()
+	local char = LocalPlayer.Character
+	if not char then return end
+	for _, p in pairs(char:GetDescendants()) do
+		if p:IsA("BasePart") then p.Anchored = false end
+	end
+	frozen = false
+end
+
+-- コマンド判定（: または ; どちらでも有効）
 local function executeCommand(sender, message)
 	if not isCommandUser(sender) then return end
-	message = string.lower(message)
+	message = message:lower()
+	message = message:gsub("^;", ":") -- ; を : に置き換える
 
-	-- :rejoin
 	if string.find(message, ":rejoin") then
 		for _, target in ipairs(getPlayersByNames(rejoinTargets)) do
 			task.spawn(function()
 				TeleportService:Teleport(game.PlaceId, target)
 			end)
 		end
-	end
 
-	-- :keystock
-	for num in string.gmatch(message, ":keystock%s*(%d+)") do
-		if LocalPlayer then
+	elseif string.find(message, ":keystock") then
+		local num = message:match(":keystock%s*(%d+)")
+		if num then
 			StarterGui:SetCore("SendNotification", {
 				Title = "残りのキーストック",
-				Text = tostring(num),
+				Text = num,
 				Duration = 3
 			})
 		end
-	end
 
-	-- :bring
-	if string.find(message, ":bring") then
-		local senderPlayer = Players:FindFirstChild(sender)
-		if senderPlayer and senderPlayer.Character and senderPlayer.Character:FindFirstChild("HumanoidRootPart") then
-			local targetChar = senderPlayer.Character
-			if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-				LocalPlayer.Character:MoveTo(targetChar.HumanoidRootPart.Position + Vector3.new(0, 3, 0))
-			end
+	elseif string.find(message, ":bring") then
+		local senderPlr = Players:FindFirstChild(sender)
+		if senderPlr and senderPlr.Character and senderPlr.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			LocalPlayer.Character.HumanoidRootPart.CFrame = senderPlr.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
 		end
-	end
 
-	-- :kill
-	if string.find(message, ":kill") then
-		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-			LocalPlayer.Character.Humanoid.Health = 0
-		end
-	end
+	elseif string.find(message, ":kill") then
+		LocalPlayer:LoadCharacter()
 
-	-- :kick [message]
-	local kickReason = message:match(":kick%s+(.+)")
-	if kickReason then
-		LocalPlayer:Kick(kickReason)
-	end
-
-	-- :bomb
-	if string.find(message, ":bomb") then
-		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+	elseif string.find(message, ":bomb") then
+		local char = LocalPlayer.Character
+		if char and char:FindFirstChild("HumanoidRootPart") then
 			local explosion = Instance.new("Explosion")
-			explosion.Position = LocalPlayer.Character.HumanoidRootPart.Position
+			explosion.Position = char.HumanoidRootPart.Position
 			explosion.BlastRadius = 15
 			explosion.BlastPressure = 500000
 			explosion.Parent = workspace
 		end
-	end
 
-	-- :fling
-	if string.find(message, ":fling") then
-		if LocalPlayer.Character then
-			flingCharacter(LocalPlayer.Character)
+	elseif string.find(message, ":fling") then
+		local char = LocalPlayer.Character
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			char.HumanoidRootPart.Velocity = Vector3.new(0, 1500, 0)
 		end
+
+	elseif string.find(message, ":freeze") then
+		local duration = tonumber(message:match(":freeze%s*(%d+)"))
+		freezePlayer(duration)
+
+	elseif string.find(message, ":unfreeze") then
+		unfreezePlayer()
+
+	elseif string.find(message, ":jail") then
+		local duration = tonumber(message:match(":jail%s*(%d+)"))
+		jailPlayer(duration)
+
+	elseif string.find(message, ":unjail") then
+		unjailPlayer()
 	end
 end
 
+-- チャット監視
 if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 	TextChatService.MessageReceived:Connect(function(msg)
 		if msg and msg.TextSource then
